@@ -93,6 +93,7 @@ class HubConnection {
   // connectionStarted is tracked independently from connectionState, so we can check if the
   // connection ever did successfully transition from connecting to connected before disconnecting.
   late bool _connectionStarted;
+  GeneralError? _handShakeError;
   Future<void>? _startPromise;
   Future<void>? _stopPromise;
 
@@ -226,7 +227,7 @@ class HubConnection {
           HandshakeRequestMessage(_protocol.name, _protocol.version);
 
       _logger?.finer("Sending handshake request.");
-
+      _handShakeError = null;
       await _sendMessage(
           _handshakeProtocol.writeHandshakeRequest(handshakeRequest));
 
@@ -237,7 +238,16 @@ class HubConnection {
       _resetTimeoutPeriod();
       _resetKeepAliveInterval();
 
-      await _handshakeCompleter!.future;
+      if (_handshakeCompleter != null) {
+        await _handshakeCompleter!.future;
+        _handShakeError = null;
+      } else {
+        if (_handShakeError != null) {
+          throw _handShakeError!;
+        } else {
+          _logger?.finer("_handshakeCompleter is null but did not error");
+        }
+      }
 
       // It's important to check the stopDuringStartError instead of just relying on the handshakePromise
       // being rejected on close, because this continuation can run after both the handshake completed successfully
@@ -619,6 +629,7 @@ class HubConnection {
       if (!_handshakeCompleter!.isCompleted) {
         _handshakeCompleter?.completeError(error);
       }
+      _handShakeError = error;
       _handshakeCompleter = null;
       throw error;
     }
@@ -632,6 +643,7 @@ class HubConnection {
       if (!_handshakeCompleter!.isCompleted) {
         _handshakeCompleter?.completeError(error);
       }
+      _handShakeError = error;
       _handshakeCompleter = null;
       throw error;
     } else {
